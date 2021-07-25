@@ -39,6 +39,7 @@ function M.delete(self)
     setmetatable(self, nil)
 end
 
+-- 根据坐标计算格子id
 local function calc_gid(dw, dh , cntx, cnty, x, y)
     local idx = x // dw
     local idy = y // dh
@@ -52,11 +53,11 @@ local grid9 = {
     {-1,1},  {0,1},  {1,1},
 }
 
+-- 计算九宫格
 local function calc9grid(cntx, cnty, gid)
     local idx = gid % cntx
     local idy = gid % cnty
     local grid_ids = {}
-    local i = 0
     for _, pos in pairs(grid9) do
         local diffx = pos[1]
         local diffy = pos[2]
@@ -65,8 +66,7 @@ local function calc9grid(cntx, cnty, gid)
         if (nidx >= 0 and nidx < cntx)
             and (nidy >= 0 and nidy < cnty) then
             local ngid = nidy * cntx + nidx
-            i = i + 1
-            grid_ids[i] = ngid
+            grid_ids[ngid] = true
         end
     end
     return grid_ids
@@ -84,7 +84,7 @@ function M.enter(self, id, x, y)
     self.objects[id] = object
     self.grids[gid][id] = object
     local grid_ids = calc9grid(self.cntx, self.cnty, gid)
-    for _, gid9 in pairs(grid_ids) do
+    for gid9, _ in pairs(grid_ids) do
         for oid, _ in pairs(self.grids[gid9]) do
             self:cb(oid, id, 'enter')
             if oid ~= id then
@@ -104,12 +104,34 @@ function M.leave(self, id)
     assert(self.grids[gid][id], "Object id not in grid. id:" .. id)
     local grid_ids = calc9grid(self.cntx, self.cnty, gid)
     self.grids[gid][id] = nil
-    for _, gid9 in pairs(grid_ids) do
+    for gid9, _ in pairs(grid_ids) do
         for oid, _ in pairs(self.grids[gid9]) do
             self:cb(oid, id, 'leave')
         end
     end
     self.objects[id] = nil
+end
+
+-- 计算交集
+local function calc_intersection_set(set1, set2)
+    local set = {}
+    for k, _ in pairs(set1) do
+        if set2[k] then
+            set[k] = true
+        end
+    end
+    return set
+end
+
+-- 计算差集
+local function calc_difference_set(set1, set2)
+    local set = {}
+    for k, _ in pairs(set1) do
+        if not set2[k] then
+            set[k] = true
+        end
+    end
+    return set
 end
 
 function M.move(self, id, x, y)
@@ -124,16 +146,38 @@ function M.move(self, id, x, y)
     assert(self.grids[gid], "Grid not exist. gid:" .. gid)
     if gid == ogid then
         local grid_ids = calc9grid(self.cntx, self.cnty, gid)
-        for _, gid9 in pairs(grid_ids) do
+        for gid9, _ in pairs(grid_ids) do
             for oid, _ in pairs(self.grids[gid9]) do
                 self:cb(oid, id, 'move')
             end
         end
     else
-        -- TODO:
+        local ogrid_ids = calc9grid(self.cntx, self.cnty, ogid)
+        local grid_ids = calc9grid(self.cntx, self.cnty, gid)
+       
         -- oldgrid - newgrid leave
+        local oldgrid_newgrid = calc_difference_set(ogrid_ids, grid_ids)
+        for gid9, _ in pairs(oldgrid_newgrid) do
+            for oid, _ in pairs(self.grids[gid9]) do
+                self:cb(oid, id, 'leave')
+            end
+        end
+        
         -- newgrid - oldgrid enter
+        local newgrid_oldgrid = calc_difference_set(grid_ids, ogrid_ids)
+        for gid9, _ in pairs(newgrid_oldgrid) do
+            for oid, _ in pairs(self.grids[gid9]) do
+                self:cb(oid, id, 'enter')
+            end
+        end
+
         -- newgrid * oldgrid move
+        local newgrid_x_oldgrid = calc_intersection_set(grid_ids, ogrid_ids)
+        for gid9, _ in pairs(newgrid_x_oldgrid) do
+            for oid, _ in pairs(self.grids[gid9]) do
+                self:cb(oid, id, 'move')
+            end
+        end
     end
 end
 
